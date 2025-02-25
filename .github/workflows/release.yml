@@ -58,6 +58,7 @@ jobs:
 
       - name: Build Packages
         run: |
+          chmod +x devkit/standardize-entitlements.sh  # 给脚本添加执行权限
           make package
           cp packages/*.tipa .
           find .theos/obj -name "*.dSYM" -exec cp -r {} . \;
