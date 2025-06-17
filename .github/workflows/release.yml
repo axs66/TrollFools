@@ -58,8 +58,10 @@ jobs:
 
       - name: Build Packages
         run: |
+          chmod +x devkit/standardize-entitlements.sh  # 给 standardize-entitlements.sh 脚本添加执行权限
+          chmod +x devkit/tipa.sh  # 给 tipa.sh 脚本添加执行权限
           make package
-          cp packages/*.tipa packages/*.deb .
+          cp packages/*.tipa .
           find .theos/obj -name "*.dSYM" -exec cp -r {} . \;
 
       - name: Upload Packages
@@ -68,7 +70,6 @@ jobs:
           name: packages-${{ env.VERSION }}
           path: |
             *.tipa
-            *.deb
             *.dSYM
 
       - name: Release
