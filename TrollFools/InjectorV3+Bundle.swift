@@ -5,33 +5,26 @@
 //  Created by 82Flex on 2025/1/10.
 //
 
-import OrderedCollections
 import CocoaLumberjackSwift
+import Foundation
+import OrderedCollections
 
 extension InjectorV3 {
-
     // MARK: - Constants
 
     static let ignoredDylibAndFrameworkNames: Set<String> = [
         "cydiasubstrate",
         "cydiasubstrate.framework",
-        "CydiaSubstrate",
-        "CydiaSubstrate.framework",
         "ellekit",
         "ellekit.framework",
-        "ElleKit",
-        "ElleKit.framework",
         "libsubstrate.dylib",
-        "libSubstrate.dylib",
         "libsubstitute.dylib",
-        "libSubstitute.dylib",
         "libellekit.dylib",
-        "libElleKit.dylib",
     ]
 
     static let substrateName = "CydiaSubstrate"
     static let substrateFwkName = "CydiaSubstrate.framework"
-    
+
     fileprivate static let infoPlistName = "Info.plist"
     fileprivate static let injectedMarkerName = ".troll-fools"
 
@@ -44,7 +37,6 @@ extension InjectorV3 {
     // MARK: - Shared Methods
 
     func frameworkMachOsInBundle(_ target: URL) throws -> OrderedSet<URL> {
-
         precondition(checkIsBundle(target), "Not a bundle: \(target.path)")
 
         let executableURL = try locateExecutableInBundle(target)
@@ -72,7 +64,7 @@ extension InjectorV3 {
 
         let machOs = linkedDylibs.intersection(enumeratedURLs)
         var sortedMachOs: [URL] =
-        switch injectStrategy.wrappedValue {
+            switch injectStrategy {
         case .lexicographic:
             machOs.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         case .fast:
@@ -91,16 +83,11 @@ extension InjectorV3 {
         case .postorder:
             machOs.reversed()
         }
-        
-        if let appIndex = sortedMachOs.firstIndex(where: { $0.lastPathComponent == "App" }) {
-            let appURL = sortedMachOs.remove(at: appIndex)
-            sortedMachOs.insert(appURL, at: 0)
-        }
 
-        DDLogWarn("Strategy \(injectStrategy.wrappedValue.rawValue)", ddlog: logger)
+        DDLogWarn("Strategy \(injectStrategy.rawValue)", ddlog: logger)
         DDLogInfo("Sorted Mach-Os \(sortedMachOs.map { $0.lastPathComponent })", ddlog: logger)
 
-        if preferMainExecutable.wrappedValue {
+        if preferMainExecutable {
             sortedMachOs.insert(executableURL, at: 0)
             DDLogWarn("Prefer main executable", ddlog: logger)
         } else {
@@ -116,7 +103,6 @@ extension InjectorV3 {
     }
 
     func injectedBundleURLsInBundle(_ target: URL) -> [URL] {
-
         precondition(checkIsBundle(target), "Not a bundle: \(target.path)")
 
         guard let bundleContentURLs = try? FileManager.default.contentsOfDirectory(at: target, includingPropertiesForKeys: [.isDirectoryKey]) else {
@@ -126,7 +112,7 @@ extension InjectorV3 {
         let bundleURLs = bundleContentURLs
             .filter {
                 $0.pathExtension.lowercased() == "bundle" &&
-                !Self.ignoredDylibAndFrameworkNames.contains($0.lastPathComponent)
+                !Self.ignoredDylibAndFrameworkNames.contains($0.lastPathComponent.lowercased())
             }
             .filter {
                 (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
@@ -140,7 +126,6 @@ extension InjectorV3 {
     }
 
     func injectedDylibAndFrameworkURLsInBundle(_ target: URL) -> [URL] {
-
         precondition(checkIsBundle(target), "Not a bundle: \(target.path)")
 
         let frameworksURL = target.appendingPathComponent("Frameworks")
@@ -151,15 +136,15 @@ extension InjectorV3 {
         let dylibURLs = frameworksContentURLs
             .filter {
                 $0.pathExtension.lowercased() == "dylib" &&
-                !$0.lastPathComponent.hasPrefix("libswift") &&
-                !Self.ignoredDylibAndFrameworkNames.contains($0.lastPathComponent)
+                    !$0.lastPathComponent.hasPrefix("libswift") &&
+                !Self.ignoredDylibAndFrameworkNames.contains($0.lastPathComponent.lowercased())
             }
             .sorted(by: { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending })
 
         let frameworkURLs = frameworksContentURLs
             .filter {
                 $0.pathExtension.lowercased() == "framework" &&
-                !Self.ignoredDylibAndFrameworkNames.contains($0.lastPathComponent)
+                !Self.ignoredDylibAndFrameworkNames.contains($0.lastPathComponent.lowercased())
             }
             .filter {
                 (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
@@ -173,7 +158,6 @@ extension InjectorV3 {
     }
 
     func markBundlesAsInjected(_ bundleURLs: [URL], privileged: Bool) throws {
-
         let filteredURLs = bundleURLs.filter { checkIsBundle($0) }
         precondition(filteredURLs.count == bundleURLs.count, "Not all urls are bundles")
 
@@ -198,7 +182,6 @@ extension InjectorV3 {
     }
 
     func identifierOfBundle(_ target: URL) throws -> String {
-
         precondition(checkIsBundle(target), "Not a bundle: \(target.path)")
 
         if let bundleIdentifier = Bundle(url: target)?.bundleIdentifier {
@@ -221,7 +204,6 @@ extension InjectorV3 {
     }
 
     func locateFrameworksDirectoryInBundle(_ target: URL) throws -> URL {
-
         precondition(checkIsBundle(target), "Not a bundle: \(target.path)")
 
         let frameworksDirectoryURL = target.appendingPathComponent("Frameworks")
@@ -233,7 +215,6 @@ extension InjectorV3 {
     }
 
     func locateExecutableInBundle(_ target: URL) throws -> URL {
-
         precondition(checkIsBundle(target), "Not a bundle: \(target.path)")
 
         if let executableURL = Bundle(url: target)?.executableURL {
@@ -301,5 +282,4 @@ extension InjectorV3 {
         let values = try? target.resourceValues(forKeys: [.isDirectoryKey])
         return values?.isDirectory ?? false
     }
-
 }

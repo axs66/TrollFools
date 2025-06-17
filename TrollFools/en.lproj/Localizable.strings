@@ -8,10 +8,25 @@
 "%@ terminated with signal %d" = "%@ terminated with signal %d";
 
 /* No comment provided by engineer. */
+"%ld Plug-Ins of “%@”" = "%1$ld Plug-Ins of “%2$@”";
+
+/* No comment provided by engineer. */
 "Advanced Settings" = "Advanced Settings";
 
 /* No comment provided by engineer. */
+"Advertisement" = "Advertisement";
+
+/* No comment provided by engineer. */
+"All" = "All";
+
+/* No comment provided by engineer. */
+"All Applications" = "All Applications";
+
+/* No comment provided by engineer. */
 "And %d more unsupported user applications." = "And %d more unsupported user applications.";
+
+/* No comment provided by engineer. */
+"Bringing back the most advanced system and security analysis tool." = "Bringing back the most advanced system and security analysis tool.";
 
 /* StripedTextTableViewController */
 "Cancel" = "Cancel";
@@ -24,6 +39,12 @@
 
 /* StripedTextTableViewController */
 "Confirm" = "Confirm";
+
+/* No comment provided by engineer. */
+"Continue" = "Continue";
+
+/* No comment provided by engineer. */
+"Continue and Don’t Show Again" = "Continue and Don’t Show Again";
 
 /* StripedTextTableViewController */
 "Copy" = "Copy";
@@ -47,6 +68,12 @@
 "Error" = "Error";
 
 /* No comment provided by engineer. */
+"Export" = "Export";
+
+/* No comment provided by engineer. */
+"Export All" = "Export All";
+
+/* No comment provided by engineer. */
 "Failed" = "Failed";
 
 /* No comment provided by engineer. */
@@ -66,6 +93,9 @@
 
 /* No comment provided by engineer. */
 "Filza (URL Scheme) Not Installed" = "Filza (URL Scheme) Not Installed";
+
+/* No comment provided by engineer. */
+"Hide" = "Hide";
 
 /* No comment provided by engineer. */
 "If you do not know what these options mean, please do not change them." = "If you do not know what these options mean, please do not change them.";
@@ -104,6 +134,12 @@
 "Made with ♥ by OwnGoal Studio" = "Made with ♥ by OwnGoal Studio";
 
 /* No comment provided by engineer. */
+"No Applications" = "No Applications";
+
+/* No comment provided by engineer. */
+"No dylib found in the Debian package." = "No dylib found in the Debian package.";
+
+/* No comment provided by engineer. */
 "No eligible framework found." = "No eligible framework found.";
 
 /* No comment provided by engineer. */
@@ -114,6 +150,9 @@
 
 /* No comment provided by engineer. */
 "No valid plug-ins found." = "No valid plug-ins found.";
+
+/* No comment provided by engineer. */
+"Notice" = "Notice";
 
 /* No comment provided by engineer. */
 "Only removable system applications are eligible and listed." = "Only removable system applications are eligible and listed.";
@@ -140,10 +179,19 @@
 "Rebuild Icon Cache" = "Rebuild Icon Cache";
 
 /* No comment provided by engineer. */
+"Record your phone calls like never before." = "Record your phone calls like never before.";
+
+/* No comment provided by engineer. */
+"Reveil" = "Reveil";
+
+/* No comment provided by engineer. */
 "Search Patched…" = "Search Patched…";
 
 /* No comment provided by engineer. */
 "Search…" = "Search…";
+
+/* No comment provided by engineer. */
+"Select an application to view details." = "Select an application to view details.";
 
 /* No comment provided by engineer. */
 "Select Application to Inject" = "Select Application to Inject";
@@ -161,13 +209,25 @@
 "Source Code" = "Source Code";
 
 /* No comment provided by engineer. */
+"System" = "System";
+
+/* No comment provided by engineer. */
 "The content of text file “%@” is empty." = "The content of text file “%@” is empty.";
 
 /* No comment provided by engineer. */
 "TrollFools" = "TrollFools";
 
 /* No comment provided by engineer. */
+"TrollRecorder" = "TrollRecorder";
+
+/* No comment provided by engineer. */
+"TrollStore" = "TrollStore";
+
+/* No comment provided by engineer. */
 "TrollStore Applications" = "TrollStore Applications";
+
+/* No comment provided by engineer. */
+"Unable to locate the data archive in the Debian package." = "Unable to locate the data archive in the Debian package.";
 
 /* No comment provided by engineer. */
 "Unlock Version" = "Unlock Version";
@@ -176,58 +236,10 @@
 "Use Weak Reference" = "Use Weak Reference";
 
 /* No comment provided by engineer. */
-"User Applications" = "User Applications";
-
-/* No comment provided by engineer. */
-"You need to rebuild the icon cache in TrollStore to apply changes." = "You need to rebuild the icon cache in TrollStore to apply changes.";
-
-/* No comment provided by engineer. */
-"@huamidev Add some features" = "@huamidev Add some features";
-
-/* No comment provided by engineer. */
-"Name (A-Z)" = "Name (A-Z)";
-
-/* No comment provided by engineer. */
-"Name (Z-A)" = "Name (Z-A)";
-
-/* No comment provided by engineer. */
-"Switch to Default Icon" = "Switch to Default Icon";
-
-/* No comment provided by engineer. */
-"All" = "All";
-
-/* No comment provided by engineer. */
 "User" = "User";
 
 /* No comment provided by engineer. */
-"Troll" = "Troll";
-
-/* No comment provided by engineer. */
-"System" = "System";
-
-/* No comment provided by engineer. */
-"Notification" = "Notification";
-
-/* No comment provided by engineer. */
-"Clear Temp Cache" = "Clear Temp Cache";
-
-/* No comment provided by engineer. */
-"Clear Done" = "Clear Done";
-
-/* No comment provided by engineer. */
-"Clear App Caches" = "Clear App Caches";
-
-/* No comment provided by engineer. */
-"This software is an open-source project TrollFools.\nIf you have purchased it, you should understand what this means.\nVisit the project address in the footer for more information.\nModified version by huami.\nChange Lessica to huami1314 to redirect to this project.\nTG: @huamidev\nThis popup will only display once.\nThanks to the original author i_82." = "This software is an open-source project TrollFools.\nIf you have purchased it, you should understand what this means.\nVisit the project address in the footer for more information.\nModified version by huami.\nChange Lessica to huami1314 to redirect to this project.\nTG: @huamidev\nThis popup will only display once.\nThanks to the original author i_82.";
-
-/* No comment provided by engineer. */
-"Un support." = "Un support.";
-
-/* No comment provided by engineer. */
-"Cancel" = "Cancel";
-
-/* No comment provided by engineer. */
-"%d applications are not supported." = "%d applications are not supported.";
+"User Applications" = "User Applications";
 
 /* No comment provided by engineer. */
 "View Logs" = "View Logs";
@@ -236,4 +248,4 @@
 "You need to rebuild the icon cache in TrollStore to apply changes." = "You need to rebuild the icon cache in TrollStore to apply changes.";
 
 /* No comment provided by engineer. */
-"Use Last Configuration" = "Use Last Configuration";
+"You’ve selected at least one Debian Package “%@”. We’re here to remind you that it will not work as it was in a jailbroken environment. Please make sure you know what you’re doing." = "You’ve selected at least one Debian Package “%@”. We’re here to remind you that it will not work as it was in a jailbroken environment. Please make sure you know what you’re doing.";

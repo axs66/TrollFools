@@ -5,42 +5,150 @@
 //  Created by Lessica on 2024/7/20.
 //
 
-import SwiftUI
-import ZIPFoundation
-import UniformTypeIdentifiers
 import CocoaLumberjackSwift
+import SwiftUI
+import SwiftUIIntrospect
+import ZIPFoundation
 
 struct EjectListView: View {
+    @StateObject var searchViewModel = AppListSearchModel()
     @StateObject var ejectList: EjectListModel
 
-    init(_ app: App) {
-        _ejectList = StateObject(wrappedValue: EjectListModel(app))
-    }
-
+    @State var quickLookExport: URL?
+    @State var isDeletingAll = false
+    @State var isExportingAll = false
     @State var isErrorOccurred: Bool = false
     @State var lastError: Error?
 
-    @State var isDeletingAll = false
     @StateObject var viewControllerHost = ViewControllerHost()
 
-    @State private var isExporting = false
-    @State private var exportURL: URL?
-    @State private var showingExportDialog = false
-    @State private var zipFileURL: URL?
+    @AppStorage var useWeakReference: Bool
+    @AppStorage var preferMainExecutable: Bool
+    @AppStorage var injectStrategy: InjectorV3.Strategy
 
-    var deleteAllButtonLabel: some View {
-        HStack {
-            Label(NSLocalizedString("Eject All", comment: ""), systemImage: "eject")
-            Spacer()
-            if isDeletingAll {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle())
+    init(_ app: App) {
+        _ejectList = StateObject(wrappedValue: EjectListModel(app))
+        _useWeakReference = AppStorage(wrappedValue: true, "UseWeakReference-\(app.id)")
+        _preferMainExecutable = AppStorage(wrappedValue: false, "PreferMainExecutable-\(app.id)")
+        _injectStrategy = AppStorage(wrappedValue: .lexicographic, "InjectStrategy-\(app.id)")
+    }
+
+    var body: some View {
+        refreshableListView
+            .toolbar { toolbarContent }
+            .animation(.easeOut, value: isExportingAll)
+            .quickLookPreview($quickLookExport)
+    }
+
+    var refreshableListView: some View {
+        Group {
+            if #available(iOS 15, *) {
+                searchableListView
+                    .refreshable {
+                        ejectList.reload()
+                    }
+            } else {
+                searchableListView
+                    .introspect(.list, on: .iOS(.v14)) { tableView in
+                        if tableView.refreshControl == nil {
+                            tableView.refreshControl = {
+                                let refreshControl = UIRefreshControl()
+                                refreshControl.addAction(UIAction { action in
+                                    ejectList.reload()
+                                    if let control = action.sender as? UIRefreshControl {
+                                        control.endRefreshing()
+                                    }
+                                }, for: .valueChanged)
+                                return refreshControl
+                            }()
+                        }
+                    }
             }
         }
     }
 
+    var searchableListView: some View {
+        Group {
+            if #available(iOS 15, *) {
+                ejectListView
+                    .onViewWillAppear { viewController in
+                        viewControllerHost.viewController = viewController
+                    }
+                    .searchable(
+                        text: $ejectList.filter.searchKeyword,
+                        placement: .automatic,
+                        prompt: NSLocalizedString("Search…", comment: "")
+                    )
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+            } else {
+                // Fallback on earlier versions
+                ejectListView
+                    .onReceive(searchViewModel.$searchKeyword) {
+                        ejectList.filter.searchKeyword = $0
+                    }
+                    .introspect(.viewController, on: .iOS(.v14)) { viewController in
+                        viewControllerHost.viewController = viewController
+                        if searchViewModel.searchController == nil {
+                            viewController.navigationItem.hidesSearchBarWhenScrolling = true
+                            viewController.navigationItem.searchController = {
+                                let searchController = UISearchController(searchResultsController: nil)
+                                searchController.searchResultsUpdater = searchViewModel
+                                searchController.obscuresBackgroundDuringPresentation = false
+                                searchController.hidesNavigationBarDuringPresentation = true
+                                searchController.searchBar.placeholder = NSLocalizedString("Search…", comment: "")
+                                return searchController
+                            }()
+                            searchViewModel.searchController = viewController.navigationItem.searchController
+                        }
+                    }
+            }
+        }
+    }
+
+    var ejectListView: some View {
+        List {
+            Section {
+                ForEach(ejectList.filteredPlugIns) {
+                    deletablePlugInCell($0)
+                }
+                .onDelete(perform: deletePlugIns)
+            } header: {
+                paddedHeaderFooterText(ejectList.filteredPlugIns.isEmpty
+                    ? NSLocalizedString("No Injected Plug-Ins", comment: "")
+                    : NSLocalizedString("Injected Plug-Ins", comment: ""))
+            }
+
+            if !ejectList.filter.isSearching && !ejectList.filteredPlugIns.isEmpty {
+                Section {
+                    deleteAllButton
+                        .disabled(isDeletingAll)
+                        .foregroundColor(isDeletingAll ? .secondary : .red)
+                } footer: {
+                    if ejectList.app.isFromTroll {
+                        paddedHeaderFooterText(NSLocalizedString("Some plug-ins were not injected by TrollFools, please eject them with caution.", comment: ""))
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(NSLocalizedString("Plug-Ins", comment: ""))
+        .animation(.easeOut, value: combines(
+            ejectList.filter,
+            isDeletingAll
+        ))
+        .background(Group {
+            NavigationLink(isActive: $isErrorOccurred) {
+                FailureView(
+                    title: NSLocalizedString("Error", comment: ""),
+                    error: lastError
+                )
+            } label: { }
+        })
+    }
+
     var deleteAllButton: some View {
-        if #available(iOS 15.0, *) {
+        if #available(iOS 15, *) {
             Button(role: .destructive) {
                 deleteAll()
             } label: {
@@ -55,179 +163,151 @@ struct EjectListView: View {
         }
     }
 
-    var ejectListView: some View {
-        List {
-            Section {
-                ForEach(ejectList.filteredPlugIns) { plugin in
-                    if #available(iOS 16.0, *) {
-                        PlugInCell(plugIn: plugin)
-                            .environmentObject(ejectList)
+    var deleteAllButtonLabel: some View {
+        HStack {
+            Label(NSLocalizedString("Eject All", comment: ""), systemImage: "eject")
+
+            Spacer()
+
+            if isDeletingAll {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            if #available(iOS 16.4, *) {
+                ShareLink(
+                    item: CompressedFileRepresentation(
+                        name: "\(ejectList.app.name)_\(ejectList.app.id)_\(UUID().uuidString.components(separatedBy: "-").last ?? "").zip",
+                        urls: ejectList.injectedPlugIns.map(\.url)
+                    ),
+                    preview: SharePreview(
+                        String(format: NSLocalizedString("%ld Plug-Ins of “%@”", comment: ""), ejectList.injectedPlugIns.count, ejectList.app.name)
+                    )
+                ) {
+                    if isExportingAll {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                            .transition(.opacity)
                     } else {
-                        // let _ = DDLogInfo("[EjectListView] 插件: \(plugin.url.path), \(ejectList.app.name)")
-                        PlugInCell(plugIn: plugin)
-                            .environmentObject(ejectList)
-                            .padding(.vertical, 4)
+                        Label(NSLocalizedString("Export All", comment: ""), systemImage: "square.and.arrow.up")
+                            .transition(.opacity)
                     }
                 }
-                .onDelete(perform: delete)
-            } header: {
-                Text(ejectList.filteredPlugIns.isEmpty
-                     ? NSLocalizedString("No Injected Plug-Ins", comment: "")
-                     : NSLocalizedString("Injected Plug-Ins", comment: ""))
-                    .font(.footnote)
-            }
-
-            if !ejectList.filter.isSearching && !ejectList.filteredPlugIns.isEmpty {
-                Section {
-                    deleteAllButton
-                        .disabled(isDeletingAll)
-                        .foregroundColor(isDeletingAll ? .secondary : .red)
-                } footer: {
-                    if ejectList.app.isFromTroll {
-                        Text(NSLocalizedString("Some plug-ins were not injected by TrollFools, please eject them with caution.", comment: ""))
-                            .font(.footnote)
+                .disabled(ejectList.injectedPlugIns.isEmpty)
+            } else {
+                Button {
+                    exportAll()
+                } label: {
+                    if isExportingAll {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                            .transition(.opacity)
+                    } else {
+                        Label(NSLocalizedString("Export All", comment: ""), systemImage: "square.and.arrow.up")
+                            .transition(.opacity)
                     }
                 }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle(NSLocalizedString("Plug-Ins", comment: ""))
-        .animation(.easeOut, value: ejectList.filter.isSearching)
-        .background(Group {
-            NavigationLink(isActive: $isErrorOccurred) {
-                FailureView(
-                    title: NSLocalizedString("Error", comment: ""),
-                    error: lastError
-                )
-            } label: { }
-        })
-        .onViewWillAppear { viewController in
-            viewControllerHost.viewController = viewController
-        }
-    }
-
-    var exportButton: some View {
-        Button(action: {
-            Task {
-                await exportPlugIns()
-            }
-        }) {
-            Image(systemName: "square.and.arrow.up")
-        }
-        .disabled(ejectList.filteredPlugIns.isEmpty)
-    }
-
-    func exportPlugIns() async {
-        guard !ejectList.filteredPlugIns.isEmpty else { return }
-
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "MMdd-HHmmss"
-        let timestamp = dateFormatter.string(from: Date())
-        let zipFileName = "\(ejectList.app.name)Plugins_\(timestamp)"
-        let zipFileURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(zipFileName).zip")
-
-        do {
-            let fileManager = FileManager.default
-            let archive = try Archive(url: zipFileURL, accessMode: .create)
-
-            for plugin in ejectList.filteredPlugIns {
-                let entryPath = "\(plugin.url.lastPathComponent)"
-                
-                guard fileManager.fileExists(atPath: plugin.url.path) else {
-                    DDLogInfo("File not found: \(plugin.url.path)")
-                    continue
-                }
-                
-                try archive.addEntry(
-                    with: entryPath, 
-                    fileURL: plugin.url, 
-                    compressionMethod: .deflate
-                )
-            }
-
-            await MainActor.run {
-                showDocumentPicker(for: zipFileURL)
-            }
-        } catch {
-            DDLogInfo("Export error: \(error)")
-            await MainActor.run {
-                lastError = error
-                isErrorOccurred = true
+                .disabled(ejectList.injectedPlugIns.isEmpty)
             }
         }
     }
 
-    func showDocumentPicker(for url: URL) {
-        guard let viewController = viewControllerHost.viewController else { return }
-        
-        let documentPicker = UIDocumentPickerViewController(forExporting: [url])
-        documentPicker.modalPresentationStyle = .formSheet
-        
-        viewController.present(documentPicker, animated: true)
-    }
-
-    var body: some View {
-        if #available(iOS 15.0, *) {
-            ejectListView
-                .refreshable {
-                    withAnimation {
-                        ejectList.reload()
-                    }
-                }
-                .searchable(
-                    text: $ejectList.filter.searchKeyword,
-                    placement: .automatic,
-                    prompt: NSLocalizedString("Search…", comment: "")
-                )
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled(true)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        exportButton
-                    }
-                }
-        } else {
-            ejectListView
+    private func deletablePlugInCell(_ plugin: InjectedPlugIn) -> some View {
+        Group {
+            if #available(iOS 16, *) {
+                PlugInCell(plugin, quickLookExport: $quickLookExport)
+                    .environmentObject(ejectList)
+            } else {
+                PlugInCell(plugin, quickLookExport: $quickLookExport)
+                    .environmentObject(ejectList)
+                    .padding(.vertical, 4)
+            }
         }
     }
 
-    func delete(at offsets: IndexSet) {
+    private func deletePlugIns(at offsets: IndexSet) {
+        var logFileURL: URL?
+
         do {
             let plugInsToRemove = offsets.map { ejectList.filteredPlugIns[$0] }
             let plugInURLsToRemove = plugInsToRemove.map { $0.url }
-            try InjectorV3(ejectList.app.url).eject(plugInURLsToRemove)
+
+            let injector = try InjectorV3(ejectList.app.url)
+            logFileURL = injector.latestLogFileURL
+
+            if injector.appID.isEmpty {
+                injector.appID = ejectList.app.id
+            }
+
+            if injector.teamID.isEmpty {
+                injector.teamID = ejectList.app.teamID
+            }
+
+            injector.useWeakReference = useWeakReference
+            injector.preferMainExecutable = preferMainExecutable
+            injector.injectStrategy = injectStrategy
+
+            try injector.eject(plugInURLsToRemove)
 
             ejectList.app.reload()
             ejectList.reload()
         } catch {
             DDLogError("\(error)", ddlog: InjectorV3.main.logger)
-            lastError = error
+
+            var userInfo: [String: Any] = [
+                NSLocalizedDescriptionKey: error.localizedDescription,
+            ]
+
+            if let logFileURL {
+                userInfo[NSURLErrorKey] = logFileURL
+            }
+
+            let nsErr = NSError(domain: gTrollFoolsErrorDomain, code: 0, userInfo: userInfo)
+
+            lastError = nsErr
             isErrorOccurred = true
         }
     }
 
-    func deleteAll() {
+    private func deleteAll() {
+        var logFileURL: URL?
+
         do {
             let injector = try InjectorV3(ejectList.app.url)
+            logFileURL = injector.latestLogFileURL
+
+            if injector.appID.isEmpty {
+                injector.appID = ejectList.app.id
+            }
+
+            if injector.teamID.isEmpty {
+                injector.teamID = ejectList.app.teamID
+            }
+
+            injector.useWeakReference = useWeakReference
+            injector.preferMainExecutable = preferMainExecutable
+            injector.injectStrategy = injectStrategy
 
             let view = viewControllerHost.viewController?
                 .navigationController?.view
 
             view?.isUserInteractionEnabled = false
 
-            withAnimation {
-                isDeletingAll = true
-            }
+            isDeletingAll = true
 
             DispatchQueue.global(qos: .userInteractive).async {
                 defer {
                     DispatchQueue.main.async {
-                        withAnimation {
-                            ejectList.app.reload()
-                            ejectList.reload()
-                            isDeletingAll = false
-                        }
+                        ejectList.app.reload()
+                        ejectList.reload()
 
+                        isDeletingAll = false
                         view?.isUserInteractionEnabled = true
                     }
                 }
@@ -236,12 +316,19 @@ struct EjectListView: View {
                     try injector.ejectAll()
                 } catch {
                     DispatchQueue.main.async {
-                        withAnimation {
-                            isDeletingAll = false
+                        DDLogError("\(error)", ddlog: InjectorV3.main.logger)
+
+                        var userInfo: [String: Any] = [
+                            NSLocalizedDescriptionKey: error.localizedDescription,
+                        ]
+
+                        if let logFileURL {
+                            userInfo[NSURLErrorKey] = logFileURL
                         }
 
-                        DDLogError("\(error)", ddlog: InjectorV3.main.logger)
-                        lastError = error
+                        let nsErr = NSError(domain: gTrollFoolsErrorDomain, code: 0, userInfo: userInfo)
+
+                        lastError = nsErr
                         isErrorOccurred = true
                     }
                 }
@@ -251,45 +338,96 @@ struct EjectListView: View {
             isErrorOccurred = true
         }
     }
-}
 
-struct ShareSheet: UIViewControllerRepresentable {
-    let activityItems: [Any]
-    
-    func makeUIViewController(context: UIViewControllerRepresentableContext<ShareSheet>) -> UIActivityViewController {
-        let controller = UIActivityViewController(
-            activityItems: activityItems,
-            applicationActivities: nil
-        )
-        
-        if #available(iOS 15.0, *) {
-            if let sheet = controller.sheetPresentationController {
-                sheet.detents = [.medium()]
-                sheet.prefersGrabberVisible = true
+    private func exportAll() {
+        let view = viewControllerHost.viewController?
+            .navigationController?.view
+
+        view?.isUserInteractionEnabled = false
+
+        isExportingAll = true
+
+        DispatchQueue.global(qos: .userInteractive).async {
+            defer {
+                DispatchQueue.main.async {
+                    isExportingAll = false
+                    view?.isUserInteractionEnabled = true
+                }
+            }
+
+            do {
+                try _exportAll()
+            } catch {
+                DispatchQueue.main.async {
+                    DDLogError("\(error)", ddlog: InjectorV3.main.logger)
+
+                    lastError = error
+                    isErrorOccurred = true
+                }
             }
         }
-        
-        return controller
     }
-    
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: UIViewControllerRepresentableContext<ShareSheet>) {}
+
+    private func _exportAll() throws {
+        let exportURL = InjectorV3.temporaryRoot
+            .appendingPathComponent("Exports_\(UUID().uuidString)", isDirectory: true)
+
+        let fileMgr = FileManager.default
+        try fileMgr.createDirectory(at: exportURL, withIntermediateDirectories: true)
+
+        for plugin in ejectList.injectedPlugIns {
+            let exportURL = exportURL.appendingPathComponent(plugin.url.lastPathComponent)
+            try fileMgr.copyItem(at: plugin.url, to: exportURL)
+        }
+
+        let zipURL = InjectorV3.temporaryRoot
+            .appendingPathComponent(
+                "\(ejectList.app.name)_\(ejectList.app.id)_\(UUID().uuidString.components(separatedBy: "-").last ?? "").zip")
+
+        try fileMgr.zipItem(at: exportURL, to: zipURL, shouldKeepParent: false)
+
+        DispatchQueue.main.async {
+            quickLookExport = zipURL
+        }
+    }
+
+    @ViewBuilder
+    private func paddedHeaderFooterText(_ content: String) -> some View {
+        if #available(iOS 15, *) {
+            Text(content)
+                .font(.footnote)
+        } else {
+            Text(content)
+                .font(.footnote)
+                .padding(.horizontal, 16)
+        }
+    }
 }
 
-struct ZIPDocument: FileDocument {
-    var url: URL
-    
-    static var readableContentTypes: [UTType] { [.zip] }
-    
-    init(url: URL) {
-        self.url = url
-    }
-    
-    init(configuration: ReadConfiguration) throws {
-        url = URL(fileURLWithPath: "")
-    }
-    
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        return try FileWrapper(url: url, options: .immediate)
+@available(iOS 16.0, *)
+private struct CompressedFileRepresentation: Transferable {
+    let name: String
+    let urls: [URL]
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .zip) { archive in
+            let exportURL = InjectorV3.temporaryRoot
+                .appendingPathComponent("Exports_\(UUID().uuidString)", isDirectory: true)
+
+            let fileMgr = FileManager.default
+            try fileMgr.createDirectory(at: exportURL, withIntermediateDirectories: true)
+
+            for url in archive.urls {
+                let exportURL = exportURL.appendingPathComponent(url.lastPathComponent)
+                try fileMgr.copyItem(at: url, to: exportURL)
+            }
+
+            let zipURL = InjectorV3.temporaryRoot
+                .appendingPathComponent(archive.name)
+
+            try fileMgr.zipItem(at: exportURL, to: zipURL, shouldKeepParent: false)
+
+            return SentTransferredFile(zipURL)
+        }
     }
 }
-

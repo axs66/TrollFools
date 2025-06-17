@@ -6,10 +6,9 @@
 //
 
 import CocoaLumberjackSwift
-
+import Foundation
 
 extension InjectorV3 {
-
     // MARK: - Instance Methods
 
     func ejectAll() throws {
@@ -55,7 +54,7 @@ extension InjectorV3 {
         }
 
         DDLogInfo("Modified Mach-Os \(targetURLs.map { $0.path })", ddlog: logger)
-        
+
         for assetURL in assetURLs {
             try targetURLs.forEach {
                 try removeLoadCommandOfAsset(assetURL, from: $0)

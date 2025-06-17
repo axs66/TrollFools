@@ -5,11 +5,11 @@
 //  Created by 82Flex on 2025/1/10.
 //
 
+import Foundation
 import MachOKit
 import OrderedCollections
 
 extension InjectorV3 {
-
     func isMachO(_ target: URL) -> Bool {
         if (try? MachOKit.loadFromFile(url: target)) != nil {
             true
@@ -21,14 +21,14 @@ extension InjectorV3 {
     func isProtectedMachO(_ target: URL) throws -> Bool {
         let machOFile = try MachOKit.loadFromFile(url: target)
         switch machOFile {
-        case .machO(let machOFile):
+        case let .machO(machOFile):
             for command in machOFile.loadCommands {
                 switch command {
-                case .encryptionInfo(let encryptionInfoCommand):
+                case let .encryptionInfo(encryptionInfoCommand):
                     if encryptionInfoCommand.cryptid != 0 {
                         return true
                     }
-                case .encryptionInfo64(let encryptionInfoCommand):
+                case let .encryptionInfo64(encryptionInfoCommand):
                     if encryptionInfoCommand.cryptid != 0 {
                         return true
                     }
@@ -36,16 +36,16 @@ extension InjectorV3 {
                     continue
                 }
             }
-        case .fat(let fatFile):
+        case let .fat(fatFile):
             let machOFiles = try fatFile.machOFiles()
             for machOFile in machOFiles {
                 for command in machOFile.loadCommands {
                     switch command {
-                    case .encryptionInfo(let encryptionInfoCommand):
+                    case let .encryptionInfo(encryptionInfoCommand):
                         if encryptionInfoCommand.cryptid != 0 {
                             return true
                         }
-                    case .encryptionInfo64(let encryptionInfoCommand):
+                    case let .encryptionInfo64(encryptionInfoCommand):
                         if encryptionInfoCommand.cryptid != 0 {
                             return true
                         }
@@ -66,7 +66,7 @@ extension InjectorV3 {
         var newCollected = collected
         newCollected.append(target)
 
-        let loadedDylibs = (try? loadedDylibsOfMachO(target).compactMap({ resolveLoadCommand($0) })) ?? []
+        let loadedDylibs = try loadedDylibsOfMachO(target).compactMap({ resolveLoadCommand($0) })
         for dylib in loadedDylibs {
             newCollected = try linkedDylibsRecursivelyOfMachO(dylib, collected: newCollected)
         }
@@ -78,25 +78,25 @@ extension InjectorV3 {
         var dylibs = OrderedSet<String>()
         let machOFile = try MachOKit.loadFromFile(url: target)
         switch machOFile {
-        case .machO(let machOFile):
+        case let .machO(machOFile):
             for command in machOFile.loadCommands {
                 switch command {
-                case .loadDylib(let loadDylibCommand):
+                case let .loadDylib(loadDylibCommand):
                     dylibs.append(loadDylibCommand.dylib(in: machOFile).name)
-                case .loadWeakDylib(let loadWeakDylibCommand):
+                case let .loadWeakDylib(loadWeakDylibCommand):
                     dylibs.append(loadWeakDylibCommand.dylib(in: machOFile).name)
                 default:
                     continue
                 }
             }
-        case .fat(let fatFile):
+        case let .fat(fatFile):
             let machOFiles = try fatFile.machOFiles()
             for machOFile in machOFiles {
                 for command in machOFile.loadCommands {
                     switch command {
-                    case .loadDylib(let loadDylibCommand):
+                    case let .loadDylib(loadDylibCommand):
                         dylibs.append(loadDylibCommand.dylib(in: machOFile).name)
-                    case .loadWeakDylib(let loadWeakDylibCommand):
+                    case let .loadWeakDylib(loadWeakDylibCommand):
                         dylibs.append(loadWeakDylibCommand.dylib(in: machOFile).name)
                     default:
                         continue
@@ -111,21 +111,21 @@ extension InjectorV3 {
         var paths = OrderedSet<String>()
         let machOFile = try MachOKit.loadFromFile(url: target)
         switch machOFile {
-        case .machO(let machOFile):
+        case let .machO(machOFile):
             for command in machOFile.loadCommands {
                 switch command {
-                case .rpath(let rpathCommand):
+                case let .rpath(rpathCommand):
                     paths.append(rpathCommand.path(in: machOFile))
                 default:
                     continue
                 }
             }
-        case .fat(let fatFile):
+        case let .fat(fatFile):
             let machOFiles = try fatFile.machOFiles()
             for machOFile in machOFiles {
                 for command in machOFile.loadCommands {
                     switch command {
-                    case .rpath(let rpathCommand):
+                    case let .rpath(rpathCommand):
                         paths.append(rpathCommand.path(in: machOFile))
                     default:
                         continue
@@ -139,11 +139,11 @@ extension InjectorV3 {
     func teamIdentifierOfMachO(_ target: URL) throws -> String? {
         let machOFile = try MachOKit.loadFromFile(url: target)
         switch machOFile {
-        case .machO(let machOFile):
+        case let .machO(machOFile):
             if let codeSign = machOFile.codeSign, let teamID = codeSign.codeDirectory?.teamId(in: codeSign) {
                 return teamID
             }
-        case .fat(let fatFile):
+        case let .fat(fatFile):
             let machOFiles = try fatFile.machOFiles()
             for machOFile in machOFiles {
                 if let codeSign = machOFile.codeSign, let teamID = codeSign.codeDirectory?.teamId(in: codeSign) {
@@ -165,7 +165,11 @@ extension InjectorV3 {
         resolvedName = resolvedName
             .replacingOccurrences(of: "@rpath/", with: frameworksDirectoryURL.path + "/")
 
-        let fileURL = URL(fileURLWithPath: resolvedName)
-        return FileManager.default.fileExists(atPath: fileURL.path) ? fileURL : nil
+        let resolvedURL = URL(fileURLWithPath: resolvedName)
+        guard FileManager.default.fileExists(atPath: resolvedURL.path) else {
+            return nil
+        }
+
+        return resolvedURL
     }
 }

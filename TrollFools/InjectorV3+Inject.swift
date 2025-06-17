@@ -6,15 +6,15 @@
 //
 
 import CocoaLumberjackSwift
-
+import Foundation
 
 extension InjectorV3 {
-
     enum Strategy: String, CaseIterable {
         case lexicographic
         case fast
         case preorder
         case postorder
+
         var localizedDescription: String {
             switch self {
             case .lexicographic: NSLocalizedString("Lexicographic", comment: "")
@@ -24,7 +24,7 @@ extension InjectorV3 {
             }
         }
     }
-    
+
     // MARK: - Instance Methods
 
     func inject(_ assetURLs: [URL]) throws {
@@ -68,11 +68,12 @@ extension InjectorV3 {
         let substrateFwkURL = try prepareSubstrate()
         guard let targetMachO = try locateAvailableMachO() else {
             DDLogError("All Mach-Os are protected", ddlog: logger)
+
             throw Error.generic(NSLocalizedString("No eligible framework found.\n\nIt is usually not a bug with TrollFools itself, but rather with the target app. You may re-install that from App Store. You can’t use TrollFools with apps installed via “Asspp” or tweaks like “NoAppThinning”.", comment: ""))
         }
 
         DDLogInfo("Best matched Mach-O is \(targetMachO.path)", ddlog: logger)
-        
+
         let resourceURLs: [URL] = [substrateFwkURL] + assetURLs
         try makeAlternate(targetMachO)
         do {
@@ -106,7 +107,7 @@ extension InjectorV3 {
 
     // MARK: - Cydia Substrate
 
-    fileprivate static let substrateZipURL = Bundle.main.url(forResource: substrateFwkName, withExtension: "zip")!
+    fileprivate static let substrateZipURL = findResource(substrateFwkName, fileExtension: "zip")
 
     fileprivate func prepareSubstrate() throws -> URL {
         try FileManager.default.unzipItem(at: Self.substrateZipURL, to: temporaryDirectoryURL)
@@ -132,7 +133,7 @@ extension InjectorV3 {
 
         let dylibs = try loadedDylibsOfMachO(machO)
         for dylib in dylibs {
-            if Self.ignoredDylibAndFrameworkNames.firstIndex(where: { dylib.hasSuffix("/\($0)") }) != nil {
+            if Self.ignoredDylibAndFrameworkNames.firstIndex(where: { dylib.lowercased().hasSuffix("/\($0)") }) != nil {
                 try cmdChangeLoadCommandDylib(machO, from: dylib, to: "@executable_path/Frameworks/\(Self.substrateFwkName)/\(Self.substrateName)")
             }
         }
@@ -146,12 +147,12 @@ extension InjectorV3 {
         if checkIsBundle(assetURL) {
             precondition(assetURL.pathExtension == "framework", "Invalid framework: \(assetURL.path)")
             let machO = try locateExecutableInBundle(assetURL)
-            name += machO.pathComponents.suffix(2).joined(separator: "/")  // @rpath/XXX.framework/XXX
+            name += machO.pathComponents.suffix(2).joined(separator: "/") // @rpath/XXX.framework/XXX
             precondition(name.contains(".framework/"), "Invalid framework name: \(name)")
         } else {
             precondition(assetURL.pathExtension == "dylib", "Invalid dylib: \(assetURL.path)")
             name += assetURL.lastPathComponent
-            precondition(name.hasSuffix(".dylib"), "Invalid dylib name: \(name)")  // @rpath/XXX.dylib
+            precondition(name.hasSuffix(".dylib"), "Invalid dylib name: \(name)") // @rpath/XXX.dylib
         }
 
         return name
@@ -161,7 +162,7 @@ extension InjectorV3 {
         let name = try loadCommandNameOfAsset(assetURL)
 
         try cmdInsertLoadCommandRuntimePath(target, name: "@executable_path/Frameworks")
-        try cmdInsertLoadCommandDylib(target, name: name, weak: useWeakReference.wrappedValue)
+        try cmdInsertLoadCommandDylib(target, name: name, weak: useWeakReference)
         try standardizeLoadCommandDylib(target, to: name)
     }
 
@@ -202,5 +203,31 @@ extension InjectorV3 {
     fileprivate func locateAvailableMachO() throws -> URL? {
         try frameworkMachOsInBundle(bundleURL)
             .first { try !isProtectedMachO($0) }
+    }
+
+    fileprivate static func findResource(_ name: String, fileExtension: String) -> URL {
+        if let url = Bundle.main.url(forResource: name, withExtension: fileExtension) {
+            return url
+        }
+        if let firstArg = ProcessInfo.processInfo.arguments.first {
+            let execURL = URL(fileURLWithPath: firstArg)
+                .deletingLastPathComponent()
+                .appendingPathComponent(name)
+                .appendingPathExtension(fileExtension)
+            if FileManager.default.isReadableFile(atPath: execURL.path) {
+                return execURL
+            }
+        }
+        if let tfProxy = LSApplicationProxy(forIdentifier: gTrollFoolsIdentifier),
+           let tfBundleURL = tfProxy.bundleURL()
+        {
+            let execURL = tfBundleURL
+                .appendingPathComponent(name)
+                .appendingPathExtension(fileExtension)
+            if FileManager.default.isReadableFile(atPath: execURL.path) {
+                return execURL
+            }
+        }
+        fatalError("Unable to locate resource \(name)")
     }
 }

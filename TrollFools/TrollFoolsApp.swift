@@ -7,11 +7,11 @@
 
 import SwiftUI
 
-let gTrollFoolsIdentifier = "wiki.qaq.TrollFools"
-let gTrollFoolsErrorDomain = "\(gTrollFoolsIdentifier).error"
-
 @main
 struct TrollFoolsApp: SwiftUI.App {
+
+    @AppStorage("isDisclaimerHidden")
+    var isDisclaimerHidden: Bool = false
 
     init() {
         try? FileManager.default.removeItem(at: InjectorV3.temporaryRoot)
@@ -19,8 +19,17 @@ struct TrollFoolsApp: SwiftUI.App {
 
     var body: some Scene {
         WindowGroup {
-            AppListView()
-                .environmentObject(AppListModel())
+            ZStack {
+                if isDisclaimerHidden {
+                    AppListView()
+                        .environmentObject(AppListModel())
+                        .transition(.opacity)
+                } else {
+                    DisclaimerView(isDisclaimerHidden: $isDisclaimerHidden)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut, value: isDisclaimerHidden)
         }
     }
 }

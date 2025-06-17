@@ -1,5 +1,24 @@
 {
+  "originHash" : "fcdbf6cfa7a3a4ec5d531775250bf50c00698f54fe6ced65e20943f02920334b",
   "pins" : [
+    {
+      "identity" : "ararchivekit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/LebJe/ArArchiveKit.git",
+      "state" : {
+        "revision" : "ec33ce8bcb0be483e80ed49c95413e64e71e157b",
+        "version" : "0.3.0"
+      }
+    },
+    {
+      "identity" : "bitbytedata",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tsolomko/BitByteData",
+      "state" : {
+        "revision" : "cdcdc5177ad536cfb11b95c620f926a81014b7fe",
+        "version" : "2.0.4"
+      }
+    },
     {
       "identity" : "cocoalumberjack",
       "kind" : "remoteSourceControl",
@@ -16,6 +35,24 @@
       "state" : {
         "branch" : "patch/trollfools",
         "revision" : "43c4b5d59ab75c91ad689fb4a39a8a3913229535"
+      }
+    },
+    {
+      "identity" : "swcompression",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tsolomko/SWCompression.git",
+      "state" : {
+        "revision" : "390e0b0af8dd19a600005a242a89e570ff482e09",
+        "version" : "4.8.6"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "revision" : "41982a3656a71c768319979febd796c6fd111d5c",
+        "version" : "1.5.0"
       }
     },
     {
@@ -37,6 +74,15 @@
       }
     },
     {
+      "identity" : "swiftui-introspect",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/siteline/swiftui-introspect.git",
+      "state" : {
+        "revision" : "668a65735751432b640260c56dfa621cec568368",
+        "version" : "1.2.0"
+      }
+    },
+    {
       "identity" : "zipfoundation",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/weichsel/ZIPFoundation.git",
@@ -46,5 +92,5 @@
       }
     }
   ],
-  "version" : 2
+  "version" : 3
 }

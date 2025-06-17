@@ -15,8 +15,10 @@
 
 @property (nonatomic, strong) NSNumberFormatter *decimalNumberFormatter;
 @property (nonatomic, assign) NSUInteger numberOfTextRowsNotLoaded;
+
 @property (nonatomic, strong) UIBarButtonItem *shareItem;
 @property (nonatomic, strong) UIBarButtonItem *trashItem;
+@property (nonatomic, strong) UIBarButtonItem *dismissItem;
 @property (nonatomic, strong) UISearchController *searchController;
 
 @property (nonatomic, assign) dispatch_source_t autoReloadSource;
@@ -72,14 +74,17 @@
         });
     }
 
-
     NSMutableArray <UIBarButtonItem *> *rightBarButtonItems = [NSMutableArray arrayWithCapacity:2];
-    if (@available(iOS 16.0, *)) {
+
+    if (self.allowDismissal) {
+        [rightBarButtonItems addObject:self.dismissItem];
+    }
+
+    if (@available(iOS 16, *)) {
         if (self.allowShare) {
             [rightBarButtonItems addObject:self.shareItem];
         }
     }
-
 
     if (self.allowTrash) {
         [rightBarButtonItems addObject:self.trashItem];
@@ -254,8 +259,18 @@
 }
 
 - (void)shareItemTapped:(UIBarButtonItem *)sender {
-    UIActivityViewController *activityViewController = [[UIActivityViewController alloc] initWithActivityItems:@[[NSURL fileURLWithPath:self.entryPath]] applicationActivities:nil];
-    if (@available(iOS 16.0, *)) {
+    if (!self.entryPath) {
+        return;
+    }
+    if (![[NSFileManager defaultManager] fileExistsAtPath:self.entryPath]) {
+        return;
+    }
+    NSURL *fileURL = [NSURL fileURLWithPath:self.entryPath];
+    if (!fileURL) {
+        return;
+    }
+    UIActivityViewController *activityViewController = [[UIActivityViewController alloc] initWithActivityItems:@[fileURL] applicationActivities:nil];
+    if (@available(iOS 16, *)) {
         activityViewController.popoverPresentationController.sourceItem = sender;
     } else {
         // Fallback on earlier versions
@@ -276,6 +291,10 @@
                           [weakSelf loadTextDataFromEntry];
                       }]];
     [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)dismissItemTapped:(UIBarButtonItem *)sender {
+    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 #pragma mark - Table view data source
@@ -433,6 +452,13 @@
         _trashItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemTrash target:self action:@selector(trashItemTapped:)];
     }
     return _trashItem;
+}
+
+- (UIBarButtonItem *)dismissItem {
+    if (!_dismissItem) {
+        _dismissItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose target:self action:@selector(dismissItemTapped:)];
+    }
+    return _dismissItem;
 }
 
 #pragma mark -

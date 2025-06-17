@@ -1,216 +1,276 @@
 //
-//  newAppListView.swift
+//  AppListView.swift
 //  TrollFools
 //
-//  Created by huami on 2024/3/19.
+//  Created by Lessica on 2024/7/19.
 //
 
-import SwiftUI
 import CocoaLumberjackSwift
+import OrderedCollections
+import SwiftUI
+import SwiftUIIntrospect
+
+typealias Scope = AppListModel.Scope
 
 struct AppListView: View {
-    @EnvironmentObject var appList: AppListModel
-    @State private var isUsingOfficialIcon = false
-    @State private var isEditing = false
-    @State var isErrorOccurred: Bool = false
-    @State var lastError: Error?
-    @State var isFirstLaunch: Bool = false
-    @State var selectorOpenedURL: URL? = nil
-    
-    var appNameString: String {
-        Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "TrollFools"
-    }
+    let isPad: Bool = UIDevice.current.userInterfaceIdiom == .pad
 
-    var appVersionString: String {
-        String(format: "v%@ (%@)_huami",
-               Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0",
-               Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0")
+    @StateObject var searchViewModel = AppListSearchModel()
+    @EnvironmentObject var appList: AppListModel
+
+    @State var selectorOpenedURL: URLIdentifiable? = nil
+    @State var selectedIndex: String? = nil
+
+    @State var isWarningPresented = false
+    @State var temporaryOpenedURL: URLIdentifiable? = nil
+
+    @AppStorage("isAdvertisementHidden")
+    var isAdvertisementHidden: Bool = false
+
+    @AppStorage("isWarningHidden")
+    var isWarningHidden: Bool = false
+
+    var shouldShowAdvertisement: Bool {
+        !isAdvertisementHidden &&
+            !appList.isPaidProductInstalled &&
+            !appList.filter.isSearching &&
+            !appList.filter.showPatchedOnly &&
+            !appList.isRebuildNeeded &&
+            !appList.isSelectorMode
     }
 
     var appString: String {
-        let currentYear = Calendar.current.component(.year, from: Date())
-        return String(format: """
-    %@ %@ %@ © %d
-    %@
-    %@
-    """, appNameString, appVersionString, NSLocalizedString("Copyright", comment: ""), currentYear, NSLocalizedString("Made with ♥ by OwnGoal Studio", comment: ""), NSLocalizedString("@huamidev Add some features", comment: ""), "TG：@huamidev")
+        let appNameString = Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "TrollFools"
+        let appVersionString = String(
+            format: "v%@ (%@)",
+            Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0",
+            Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+        )
+
+        let appStringFormat = """
+        %@ %@ %@ © 2024-2025
+        %@
+        """
+
+        return String(
+            format: appStringFormat,
+            appNameString, appVersionString,
+            NSLocalizedString("Copyright", comment: ""),
+            NSLocalizedString("Made with ♥ by OwnGoal Studio", comment: "")
+        )
     }
 
-    let repoURL = URL(string: "https://github.com/Lessica/TrollFools")
-
-    var appListFooterView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(appString)
-                .font(.footnote)
-
-            Button {
-                if let repoURL {
-                    UIApplication.shared.open(repoURL)
+    var body: some View {
+        if #available(iOS 15, *) {
+            content
+                .alert(
+                    NSLocalizedString("Notice", comment: ""),
+                    isPresented: $isWarningPresented,
+                    presenting: temporaryOpenedURL
+                ) { result in
+                    Button {
+                        selectorOpenedURL = result
+                    } label: {
+                        Text(NSLocalizedString("Continue", comment: ""))
+                    }
+                    Button(role: .destructive) {
+                        selectorOpenedURL = result
+                        isWarningHidden = true
+                    } label: {
+                        Text(NSLocalizedString("Continue and Don’t Show Again", comment: ""))
+                    }
+                    Button(role: .cancel) {
+                        temporaryOpenedURL = nil
+                        isWarningPresented = false
+                    } label: {
+                        Text(NSLocalizedString("Cancel", comment: ""))
+                    }
+                } message: {
+                    Text(OptionView.warningMessage([$0.url]))
                 }
-            } label: {
-                Text(NSLocalizedString("Source Code", comment: ""))
-                    .font(.footnote)
+        } else {
+            content
+        }
+    }
+
+    var content: some View {
+        styledNavigationView
+            .animation(.easeOut, value: appList.activeScopeApps.keys)
+            .sheet(item: $selectorOpenedURL) { urlWrapper in
+                AppListView()
+                    .environmentObject(AppListModel(selectorURL: urlWrapper.url))
+            }
+            .onOpenURL { url in
+                let ext = url.pathExtension.lowercased()
+                guard url.isFileURL,
+                      (ext == "dylib" || ext == "deb" || ext == "zip")
+                else {
+                    return
+                }
+                let urlIdent = URLIdentifiable(url: preprocessURL(url))
+                if !isWarningHidden && ext == "deb" {
+                    temporaryOpenedURL = urlIdent
+                    isWarningPresented = true
+                } else {
+                    selectorOpenedURL = urlIdent
+                }
+            }
+            .onAppear {
+                if Double.random(in: 0 ..< 1) < 0.1 {
+                    isAdvertisementHidden = false
+                }
+            }
+    }
+
+    var styledNavigationView: some View {
+        Group {
+            if isPad {
+                navigationView
+                    .navigationViewStyle(.automatic)
+            } else {
+                navigationView
+                    .navigationViewStyle(.stack)
             }
         }
     }
 
-    var appListView: some View {
+    var navigationView: some View {
+        NavigationView {
+            ScrollViewReader { reader in
+                ZStack {
+                    refreshableListView
+                    if appList.activeScopeApps.keys.count > 1 {
+                        IndexableScroller(
+                            indexes: appList.activeScopeApps.keys.elements,
+                            currentIndex: $selectedIndex
+                        )
+                    }
+                }
+                .onChange(of: selectedIndex) { index in
+                    if let index {
+                        reader.scrollTo("AppSection-\(index)", anchor: .top)
+                    }
+                }
+            }
+
+            // Detail view shown when nothing has been selected
+            if !appList.isSelectorMode {
+                PlaceholderView()
+            }
+        }
+    }
+
+    var refreshableListView: some View {
+        Group {
+            if #available(iOS 15, *) {
+                searchableListView
+                    .refreshable {
+                        appList.reload()
+                    }
+            } else {
+                searchableListView
+                    .introspect(.list, on: .iOS(.v14)) { tableView in
+                        if tableView.refreshControl == nil {
+                            tableView.refreshControl = {
+                                let refreshControl = UIRefreshControl()
+                                refreshControl.addAction(UIAction { action in
+                                    appList.reload()
+                                    if let control = action.sender as? UIRefreshControl {
+                                        control.endRefreshing()
+                                    }
+                                }, for: .valueChanged)
+                                return refreshControl
+                            }()
+                        }
+                    }
+            }
+        }
+    }
+
+    var searchableListView: some View {
+        listView
+            .onChange(of: appList.filter.showPatchedOnly) { showPatchedOnly in
+                if let searchBar = searchViewModel.searchController?.searchBar {
+                    reloadSearchBarPlaceholder(searchBar, showPatchedOnly: showPatchedOnly)
+                }
+            }
+            .onReceive(searchViewModel.$searchKeyword) {
+                appList.filter.searchKeyword = $0
+            }
+            .onReceive(searchViewModel.$searchScopeIndex) {
+                appList.activeScope = Scope(rawValue: $0) ?? .all
+            }
+            .introspect(.viewController, on: .iOS(.v14, .v15, .v16, .v17, .v18)) { viewController in
+                if searchViewModel.searchController == nil {
+                    viewController.navigationItem.hidesSearchBarWhenScrolling = true
+                    viewController.navigationItem.searchController = {
+                        let searchController = UISearchController(searchResultsController: nil)
+                        searchController.searchResultsUpdater = searchViewModel
+                        searchController.obscuresBackgroundDuringPresentation = false
+                        searchController.hidesNavigationBarDuringPresentation = true
+                        searchController.automaticallyShowsScopeBar = false
+                        if #available(iOS 16, *) {
+                            searchController.scopeBarActivation = .manual
+                        }
+                        setupSearchBar(searchController: searchController)
+                        return searchController
+                    }()
+                    searchViewModel.searchController = viewController.navigationItem.searchController
+                }
+            }
+    }
+
+    var listView: some View {
         List {
             if AppListModel.hasTrollStore && appList.isRebuildNeeded {
-                Section {
-                    Button {
-                        rebuildIconCache()
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(NSLocalizedString("Rebuild Icon Cache", comment: ""))
-                                    .font(.headline)
-                                    .foregroundColor(.primary)
-
-                                Text(NSLocalizedString("You need to rebuild the icon cache in TrollStore to apply changes.", comment: ""))
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
-
-                            if appList.isRebuilding {
-                                if #available(iOS 16.0, *) {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                        .controlSize(.large)
-                                } else {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                        .scaleEffect(2.0)
-                                }
-                            } else {
-                                Image(systemName: "timelapse")
-                                    .font(.title)
-                                    .foregroundColor(.accentColor)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .disabled(appList.isRebuilding)
-                }
+                rebuildSection.transition(.opacity)
             }
 
-            Section {
-                ForEach(appList.displayedApplications) { app in
-                    NavigationLink {
-                        if appList.isSelectorMode, let selectorURL = appList.selectorURL {
-                            InjectView(app, urlList: [selectorURL])
-                        } else {
-                            OptionView(app)
-                        }
-                    } label: {
-                        AppListCell(app: app)
-                    }
-                }
-            } footer: {
-                if !appList.filter.isSearching {
-                    VStack(alignment: .leading, spacing: 20) {
-                        if !appList.filter.showPatchedOnly {
-                            Text(NSLocalizedString("Only removable system applications are eligible and listed.", comment: ""))
-                                .font(.footnote)
-                            
-                            if appList.unsupportedCount > 0 {
-                                Text(String(format: NSLocalizedString("%d applications are not supported.", comment: ""), appList.unsupportedCount))
-                                    .font(.footnote)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        if !appList.isSelectorMode {
-                            if #available(iOS 16.0, *) {
-                                appListFooterView
-                                    .padding(.top, 8)
-                            } else {
-                                appListFooterView
-                                    .padding(.top, 2)
-                            }
-                        }
-                    }
-                }
+            switch appList.activeScope {
+            case .all:
+                allAppGroup.transition(.opacity)
+            case .user:
+                userAppGroup.transition(.opacity)
+            case .troll:
+                trollAppGroup.transition(.opacity)
+            case .system:
+                systemAppGroup.transition(.opacity)
             }
         }
+        .animation(.easeOut, value: combines(
+            appList.isRebuildNeeded,
+            appList.activeScope,
+            appList.filter,
+            appList.unsupportedCount,
+            shouldShowAdvertisement
+        ))
         .listStyle(.insetGrouped)
-        .navigationTitle(appList.isSelectorMode ? NSLocalizedString("Select Application to Inject", comment: "") : NSLocalizedString("TrollFools", comment: ""))
-        .navigationBarTitleDisplayMode(appList.isSelectorMode ? .inline : .automatic)
-        .background(Group {
-            NavigationLink(isActive: $isErrorOccurred) {
-                FailureView(
-                    title: NSLocalizedString("Error", comment: ""),
-                    error: lastError
-                )
-            } label: { }
-        })
-        .gesture(
-            DragGesture()
-                .onEnded { value in
-                    withAnimation(.interpolatingSpring(stiffness: 300, damping: 15)) {
-                        if value.translation.width > 100 {
-                            switch appList.selectedFilter {
-                            case .all:
-                                appList.selectedFilter = .system
-                            case .user:
-                                appList.selectedFilter = .all
-                            case .troll:
-                                appList.selectedFilter = .user
-                            case .system:
-                                appList.selectedFilter = .troll
-                            }
-                        } else if value.translation.width < -100 {
-                            switch appList.selectedFilter {
-                            case .all:
-                                appList.selectedFilter = .user
-                            case .user:
-                                appList.selectedFilter = .troll
-                            case .troll:
-                                appList.selectedFilter = .system
-                            case .system:
-                                appList.selectedFilter = .all
-                            }
-                        }
-                    }
-                }
+        .navigationTitle(appList.isSelectorMode ?
+            NSLocalizedString("Select Application to Inject", comment: "") :
+            NSLocalizedString("TrollFools", comment: "")
         )
+        .navigationBarTitleDisplayMode(appList.isSelectorMode ? .inline : .automatic)
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Menu {
-                    Button(NSLocalizedString("Name (A-Z)", comment: "")) {
-                        appList.sortOrder = .ascending
-                        appList.performFilter()
+            ToolbarItem(placement: .principal) {
+                if appList.isSelectorMode, let selectorURL = appList.selectorURL {
+                    VStack {
+                        Text(selectorURL.lastPathComponent).font(.headline)
+                        Text(NSLocalizedString("Select Application to Inject", comment: "")).font(.caption)
                     }
-                    Button(NSLocalizedString("Name (Z-A)", comment: "")) {
-                        appList.sortOrder = .descending
-                        appList.performFilter()
-                    }
-                    Button(action: toggleAppIcon) {
-                        Text(isUsingOfficialIcon ? NSLocalizedString("Switch to Default Icon", comment: "") : NSLocalizedString("Switch to Official Icon", comment: ""))
-                    }
-                    Button(action: clearCache) {
-                        Text(NSLocalizedString("Clear Temp Cache", comment: ""))
-                    }
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down.circle")
                 }
-                .accessibilityLabel(NSLocalizedString("Sort Order", comment: ""))
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        appList.filter.showPatchedOnly.toggle()
-                        appList.performFilter()
-                    }
+                    appList.filter.showPatchedOnly.toggle()
                 } label: {
-                    if #available(iOS 15.0, *) {
-                        Image(systemName: appList.filter.showPatchedOnly 
-                              ? "line.3.horizontal.decrease.circle.fill"
-                              : "line.3.horizontal.decrease.circle")
+                    if #available(iOS 15, *) {
+                        Image(systemName: appList.filter.showPatchedOnly
+                            ? "line.3.horizontal.decrease.circle.fill"
+                            : "line.3.horizontal.decrease.circle")
                     } else {
-                        Image(systemName: "slider.horizontal.3")
+                        Image(systemName: appList.filter.showPatchedOnly
+                            ? "eject.circle.fill"
+                            : "eject.circle")
                     }
                 }
                 .accessibilityLabel(NSLocalizedString("Show Patched Only", comment: ""))
@@ -218,204 +278,182 @@ struct AppListView: View {
         }
     }
 
-    var body: some View {
-        NavigationView {
-            VStack {
-                if #available(iOS 15.0, *) {
-                    // iOS 15 及以上的搜索框和功能
-                    VStack {
-                        // 分类列
-                        Picker("", selection: $appList.selectedFilter) {
-                            Text(NSLocalizedString("All", comment: "")).tag(AppListModel.Filter.all)
-                            Text(NSLocalizedString("User", comment: "")).tag(AppListModel.Filter.user)
-                            Text(NSLocalizedString("Troll", comment: "")).tag(AppListModel.Filter.troll)
-                            Text(NSLocalizedString("System", comment: "")).tag(AppListModel.Filter.system)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .padding(.horizontal)
-                        .padding(.vertical, 4)
-                        // iOS 15 的搜索框
-                        appListView
-                            .refreshable {
-                                withAnimation {
-                                    appList.reload()
+    var allAppGroup: some View {
+        Group {
+            if !appList.filter.isSearching && !appList.filter.showPatchedOnly && !appList.isRebuildNeeded && appList.unsupportedCount > 0 {
+                Section {
+                } footer: {
+                    paddedHeaderFooterText(String(format: NSLocalizedString("And %d more unsupported user applications.", comment: ""), appList.unsupportedCount))
+                }
+            }
+
+            if #available(iOS 15, *) {
+                if shouldShowAdvertisement {
+                    advertisementSection
+                }
+            }
+
+            appSections
+        }
+    }
+
+    var userAppGroup: some View {
+        Group {
+            if !appList.filter.isSearching && !appList.filter.showPatchedOnly && !appList.isRebuildNeeded && appList.unsupportedCount > 0 {
+                Section {
+                } footer: {
+                    paddedHeaderFooterText(String(format: NSLocalizedString("And %d more unsupported user applications.", comment: ""), appList.unsupportedCount))
+                }
+            }
+
+            appSections
+        }
+    }
+
+    var trollAppGroup: some View {
+        Group {
+            appSections
+        }
+    }
+
+    var systemAppGroup: some View {
+        Group {
+            if !appList.filter.isSearching && !appList.filter.showPatchedOnly && !appList.isRebuildNeeded {
+                Section {
+                } footer: {
+                    paddedHeaderFooterText(NSLocalizedString("Only removable system applications are eligible and listed.", comment: ""))
+                }
+            }
+
+            appSections
+        }
+    }
+
+    var appSections: some View {
+        Group {
+            if !appList.activeScopeApps.isEmpty {
+                ForEach(Array(appList.activeScopeApps.keys), id: \.self) { sectionKey in
+                    Section {
+                        ForEach(appList.activeScopeApps[sectionKey] ?? [], id: \.id) { app in
+                            NavigationLink {
+                                if appList.isSelectorMode, let selectorURL = appList.selectorURL {
+                                    InjectView(app, urlList: [selectorURL])
+                                } else {
+                                    OptionView(app)
+                                }
+                            } label: {
+                                if #available(iOS 16, *) {
+                                    AppListCell(app: app)
+                                } else {
+                                    AppListCell(app: app)
+                                        .padding(.vertical, 4)
                                 }
                             }
-                            .searchable(
-                                text: $appList.filter.searchKeyword,
-                                placement: .automatic,
-                                prompt: (appList.filter.showPatchedOnly
-                                         ? NSLocalizedString("Search Patched…", comment: "")
-                                         : NSLocalizedString("Search…", comment: ""))
-                            )
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled(true)
+                        }
+                    } header: {
+                        paddedHeaderFooterText(sectionKey)
+                    } footer: {
+                        if sectionKey == appList.activeScopeApps.keys.last {
+                            footer
+                        }
                     }
+                    .id("AppSection-\(sectionKey)")
+                }
+            } else {
+                Section {
+                } header: {
+                    paddedHeaderFooterText(NSLocalizedString("No Applications", comment: ""))
+                        .textCase(.none)
+                } footer: {
+                    footer
+                }
+            }
+        }
+    }
+
+    var rebuildSection: some View {
+        Section {
+            Button {
+                appList.rebuildIconCache()
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(NSLocalizedString("Rebuild Icon Cache", comment: ""))
+                            .font(.headline)
+                            .foregroundColor(.primary)
+
+                        Text(NSLocalizedString("You need to rebuild the icon cache in TrollStore to apply changes.", comment: ""))
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "timelapse")
+                        .font(.title)
+                        .foregroundColor(.accentColor)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    @available(iOS 15.0, *)
+    var advertisementSection: some View {
+        Section {
+            Button {
+                UIApplication.shared.open(App.advertisementApp.url)
+            } label: {
+                if #available(iOS 16, *) {
+                    AppListCell(app: App.advertisementApp)
                 } else {
-                    // iOS 14 自定义搜索框和按钮
-                    VStack {
-                        HStack(spacing: 0) {
-                            HStack {
-                                Image(systemName: "magnifyingglass")
-                                    .foregroundColor(.gray)
-                                    .padding(10)
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(6)
-                                TextField(NSLocalizedString("Search…", comment: ""), text: $appList.filter.searchKeyword, onEditingChanged: { editing in
-                                    withAnimation {
-                                        isEditing = editing
-                                    }
-                                })
-                                .padding(10)
-                                .background(Color(.systemGray6))
-                                .cornerRadius(10)
-                                .frame(maxWidth: .infinity)
-                            }
-                            .frame(maxWidth: .infinity)
-
-                            if isEditing {
-                                Button(action: {
-                                    withAnimation {
-                                        appList.filter.searchKeyword = ""
-                                        isEditing = false
-                                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                                    }
-                                }) {
-                                    Text(NSLocalizedString("Cancel", comment: ""))
-                                        .foregroundColor(.blue)
-                                        .padding(2)
-                                }
-                                .transition(.move(edge: .trailing))
-                                .frame(width: 60)
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.top) // 添加顶部内边距以与分类列对齐
-
-                        // 分类列
-                        Picker("", selection: $appList.selectedFilter) {
-                            Text(NSLocalizedString("All", comment: "")).tag(AppListModel.Filter.all)
-                            Text(NSLocalizedString("User", comment: "")).tag(AppListModel.Filter.user)
-                            Text(NSLocalizedString("Troll", comment: "")).tag(AppListModel.Filter.troll)
-                            Text(NSLocalizedString("System", comment: "")).tag(AppListModel.Filter.system)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        .padding(.horizontal)
+                    AppListCell(app: App.advertisementApp)
                         .padding(.vertical, 4)
-                        appListView
-                    }
+                }
+            }
+            .foregroundColor(.primary)
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button {
+                    isAdvertisementHidden = true
+                } label: {
+                    Label(NSLocalizedString("Hide", comment: ""), systemImage: "eye.slash")
+                }
+                .tint(.red)
+            }
+        } header: {
+            paddedHeaderFooterText(NSLocalizedString("Advertisement", comment: ""))
+        }
+    }
+
+    var footer: some View {
+        Group {
+            if !appList.isSelectorMode && !appList.filter.isSearching {
+                if #available(iOS 16, *) {
+                    footerContent
+                        .padding(.top, 8)
+                } else if #available(iOS 15, *) {
+                    footerContent
+                        .padding(.top, 2)
+                } else {
+                    footerContent
+                        .padding(.top, 8)
+                        .padding(.horizontal, 16)
                 }
             }
         }
-        .onAppear {
-            checkFirstLaunch()
-            checkCurrentIcon()
-        }
-        .alert(isPresented: $isFirstLaunch) {
-            Alert(
-                title: Text("Notification"),
-                message: Text("This software is an open-source project TrollFools.\nIf you have purchased it, you should understand what this means.\nVisit the project address in the footer for more information.\nModified version by huami.\nChange Lessica to huami1314 to redirect to this project.\nTG: @huamidev\nThis popup will only display once.\nThanks to the original author i_82.")
-                    .font(.subheadline),
-                dismissButton: .default(Text("OK"))
-            )
-        }
-        .sheet(item: $selectorOpenedURL) { url in
-            AppListView()
-                .environmentObject(AppListModel(selectorURL: url))
-        }
-        .onOpenURL { url in
-            guard url.isFileURL, ["dylib", "deb"].contains(url.pathExtension.lowercased()) else {
-                return
-            }
-            selectorOpenedURL = preprocessURL(url)
-        }
+        .padding(.bottom, 16)
     }
 
-    private func clearCache() {
-        do {
-            let tempDir = try FileManager.default.url(
-                for: .itemReplacementDirectory,
-                in: .userDomainMask,
-                appropriateFor: URL(fileURLWithPath: NSHomeDirectory()),
-                create: true
-            ).deletingLastPathComponent()
-            
-            let fileManager = FileManager.default
-            let contents = try fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
-            
-            for url in contents {
-                // DDLogInfo("[SystemCache] 正在清理临时目录: \(url.path)")
-                try? fileManager.removeItem(at: url)
-            }
-            
-            // DDLogInfo("[SystemCache] 系统临时缓存清理完成")
-        } catch {
-            // DDLogInfo("[SystemCache] 清理系统缓存失败: \(error.localizedDescription)")
-        }
-    }
+    var footerContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(appString)
+                .font(.footnote)
 
-    private func toggleAppIcon() {
-        let newIcon = isUsingOfficialIcon ? nil : "AppIcon-official"
-        
-        UIApplication.shared.setAlternateIconName(newIcon) { error in
-            if let error = error {
-                print("Failed to set icon: \(error)")
-            }
-        }
-        
-        isUsingOfficialIcon.toggle()
-    }
-    
-    private func checkCurrentIcon() {
-        let currentIconName = UIApplication.shared.alternateIconName
-        DispatchQueue.main.async {
-            self.isUsingOfficialIcon = (currentIconName == "AppIcon-official")
-        }
-    }
-
-    private func checkFirstLaunch() {
-        let defaults = UserDefaults.standard
-        if !defaults.bool(forKey: "TFlaunch") {
-            defaults.set(true, forKey: "TFlaunch")
-            isFirstLaunch = true
-        } else {
-            isFirstLaunch = false
-        }
-    }
-    
-    private func getDocumentsDirectory() -> URL {
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-    }
-    
-    private func rebuildIconCache() {
-        withAnimation {
-            appList.isRebuilding = true
-        }
-
-        DispatchQueue.global(qos: .userInteractive).async {
-            defer {
-                DispatchQueue.main.async {
-                    withAnimation {
-                        appList.isRebuilding = false
-                    }
-                }
-            }
-
-            do {
-                try appList.rebuildIconCache()
-
-                DispatchQueue.main.async {
-                    withAnimation {
-                        appList.isRebuildNeeded = false
-                    }
-                }
-            } catch {
-                DDLogError("\(error)", ddlog: InjectorV3.main.logger)
-                
-                DispatchQueue.main.async {
-                    lastError = error
-                    isErrorOccurred = true
-                }
+            Button {
+                UIApplication.shared.open(URL(string: "https://github.com/Lessica/TrollFools")!)
+            } label: {
+                Text(NSLocalizedString("Source Code", comment: ""))
+                    .font(.footnote)
             }
         }
     }
@@ -441,8 +479,41 @@ struct AppListView: View {
             return url
         }
     }
+
+    private func setupSearchBar(searchController: UISearchController) {
+        if let searchBarDelegate = searchController.searchBar.delegate, (searchBarDelegate as? NSObject) != searchViewModel {
+            searchViewModel.forwardSearchBarDelegate = searchBarDelegate
+        }
+
+        searchController.searchBar.delegate = searchViewModel
+        searchController.searchBar.showsScopeBar = true
+        searchController.searchBar.scopeButtonTitles = Scope.allCases.map { $0.localizedShortName }
+        searchController.searchBar.autocapitalizationType = .none
+        searchController.searchBar.autocorrectionType = .no
+
+        reloadSearchBarPlaceholder(searchController.searchBar, showPatchedOnly: appList.filter.showPatchedOnly)
+    }
+
+    private func reloadSearchBarPlaceholder(_ searchBar: UISearchBar, showPatchedOnly: Bool) {
+        searchBar.placeholder = (showPatchedOnly
+            ? NSLocalizedString("Search Patched…", comment: "")
+            : NSLocalizedString("Search…", comment: ""))
+    }
+
+    @ViewBuilder
+    private func paddedHeaderFooterText(_ content: String) -> some View {
+        if #available(iOS 15, *) {
+            Text(content)
+                .font(.footnote)
+        } else {
+            Text(content)
+                .font(.footnote)
+                .padding(.horizontal, 16)
+        }
+    }
 }
 
-extension URL: Identifiable {
-    public var id: String { absoluteString }
+struct URLIdentifiable: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
 }
